@@ -10,17 +10,6 @@ The plug can be configured to use:
 
 2) Your own custom authentication function
 
-## Breaking change
-
-Note that putting values directly into the plug is no longer supported.
-
-```elixir
-
-## NO LONGER SUPPORTED
-
-plug BasicAuth, realm: "realm", password: "password", username: "username"
-```
-
 ## How to use
 
 Add the package as a dependency in your Elixir project using something along the lines of:

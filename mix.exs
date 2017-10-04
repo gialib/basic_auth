@@ -11,7 +11,8 @@ defmodule BasicAuth.Mixfile do
      start_permanent: Mix.env == :prod,
      deps: deps(),
      docs: [
-       main: "BasicAuth",
+       main: "readme",
+       extras: ["README.md"],
      ],
     ]
   end
