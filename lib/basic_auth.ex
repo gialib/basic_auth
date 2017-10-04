@@ -50,20 +50,26 @@ defmodule BasicAuth do
   """
 
   defmodule Configuration do
+    @moduledoc false
     defstruct  config_options: nil
+  end
+
+  defmodule Callback do
+    @moduledoc false
+    defstruct callback: nil, realm: "Basic Authentication"
   end
 
 
   def init([use_config: config_options]) do
-    %Configuration{config_options: config_options,}
+    %Configuration{config_options: config_options}
   end
 
   def init([callback: callback, realm: realm]) do
-    %{callback: callback, realm: realm}
+    %Callback{callback: callback, realm: realm}
   end
 
   def init([callback: callback]) do
-    %{callback: callback, realm: "Basic Authentication"}
+    %Callback{callback: callback, realm: "Basic Authentication"}
   end
 
   def init(_) do
@@ -85,12 +91,9 @@ defmodule BasicAuth do
     respond(conn, header_content, options)
   end
 
-  defp respond(conn, ["Basic " <> key], options) do
-    with {:ok, string} <- Base.decode64(key),
-         [username, password] <- String.split(string, ":", parts: 2)
-    do
-      respond(conn, username, password, options)
-    else
+  defp respond(conn, ["Basic " <> encoded], options) do
+    case Base.decode64(encoded) do
+      {:ok, key} -> respondx(conn, key, options)
       _ ->
         send_unauthorized_response(conn, options)
     end
@@ -100,22 +103,28 @@ defmodule BasicAuth do
     send_unauthorized_response(conn, options)
   end
 
-  defp respond(conn, username, password, %{callback: callback}) do
-    conn = callback.(conn, username, password)
-    if conn.halted do
-      send_unauthorized_response(conn, %{})
-    else
-      conn
+  defp respondx(conn, key, %Callback{callback: callback}) do
+    case String.split(key, ":", parts: 2) do
+      [username, password] ->
+        conn = callback.(conn, username, password)
+        if conn.halted do
+          send_unauthorized_response(conn, %{})
+        else
+          conn
+        end
+      _ ->
+        send_unauthorized_response(conn, %{})
     end
   end
 
-  defp respond(conn, username, password, %Configuration{config_options: config_options}) do
-    if {username, password} == {username(config_options), password(config_options)} do
+  defp respondx(conn, provided_key, %Configuration{config_options: config_options}) do
+    if provided_key  == authentication_key(config_options) do
       conn
     else
       send_unauthorized_response(conn, %{realm: realm(config_options)})
     end
   end
+
 
   defp send_unauthorized_response(conn, %Configuration{config_options: config_options}) do
     conn
@@ -139,6 +148,13 @@ defmodule BasicAuth do
 
   defp to_value({:system, env_var}), do: System.get_env(env_var)
   defp to_value(value), do: value
+
+  defp authentication_key(config_options = {app, key}) do
+    case Application.fetch_env!(app, key)[:key] do
+      nil -> username(config_options) <> ":" <> password(config_options)
+      authentication_key -> authentication_key
+    end
+  end
 
   defp username({app, key}) do
     app

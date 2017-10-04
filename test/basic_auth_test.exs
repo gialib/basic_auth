@@ -2,34 +2,10 @@ defmodule BasicAuthTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
-  defmodule DemoPlug do
-    defmacro __using__(args) do
-      quote bind_quoted: [args: args] do
-        use Plug.Builder
-        plug BasicAuth, args
-        plug :index
-        defp index(conn, _opts), do: conn |> send_resp(200, "OK")
-      end
-    end
-  end
-
   describe "custom function" do
     defmodule User do
-      def find_by_username_and_password(conn, username, password) do
-        if username == "robert" && password == "secret" do
-          Plug.Conn.assign(conn, :current_user, %{name: "robert"})
-        else
-          Plug.Conn.halt(conn)
-        end
-      end
-
-      def find_by_username_and_password_with_colons(conn, username, password) do
-        if username == "robert" && password == "secret:value:has:colons" do
-          Plug.Conn.assign(conn, :current_user, %{name: "robert"})
-        else
-          Plug.Conn.halt(conn)
-        end
-      end
+      def find_by_username_and_password(conn, "robert", "secret:value"), do: conn
+      def find_by_username_and_password(conn, _, _), do: Plug.Conn.halt(conn)
     end
 
     defmodule PlugWithCallback do
@@ -38,10 +14,6 @@ defmodule BasicAuthTest do
 
     defmodule PlugWithCallbackAndRealm do
       use DemoPlug, callback: &User.find_by_username_and_password/3, realm: "Bob's Kingdom"
-    end
-
-    defmodule PlugWithCallbackWithColonsInPassword do
-      use DemoPlug, callback: &User.find_by_username_and_password_with_colons/3
     end
 
     test "no credentials provided" do
@@ -68,7 +40,7 @@ defmodule BasicAuthTest do
     end
 
     test "right credentials provided" do
-      header_content = "Basic " <> Base.encode64("robert:secret")
+      header_content = "Basic " <> Base.encode64("robert:secret:value")
 
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
@@ -76,23 +48,20 @@ defmodule BasicAuthTest do
       assert conn.status == 200
     end
 
-    test "password allows a colon" do
-      header_content = "Basic " <> Base.encode64("robert:secret:value:has:colons")
+    test "incorrect basic auth formatting returns a 401" do
+      header_content = "Basic " <> Base.encode64("bogus")
 
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
-      |> PlugWithCallbackWithColonsInPassword.call([])
-      assert conn.status == 200
+      |> PlugWithCallback.call([])
+
+      assert conn.status == 401
     end
   end
 
-  describe "credential checking" do
+  describe "with username and password from configuration" do
     defmodule SimplePlug do
       use DemoPlug, use_config: {:basic_auth, :my_auth}
-    end
-
-    defmodule SimplePlugWithColonsInPassword do
-      use DemoPlug, use_config: {:basic_auth, :my_auth_with_colons}
     end
 
     test "no credentials returns a 401" do
@@ -144,7 +113,7 @@ defmodule BasicAuthTest do
     end
 
     test "valid credentials returns a 200" do
-      header_content = "Basic " <> Base.encode64("admin:simple_password")
+      header_content = "Basic " <> Base.encode64("admin:simple:password")
 
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
@@ -152,32 +121,36 @@ defmodule BasicAuthTest do
 
       assert conn.status == 200
     end
+  end
 
-    test "valid credentials with colons in password returns a 200" do
-      header_content = "Basic " <> Base.encode64("admin:simple_password:with:colons")
+  describe "using key instead of username and password" do
+    defmodule PlugWithKey do
+      use DemoPlug, use_config: {:basic_auth, :my_auth_with_key}
+    end
 
+    test "is successful" do
+      header_content = "Basic " <> Base.encode64("my:secure:key")
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
-      |> SimplePlugWithColonsInPassword.call([])
+      |> PlugWithKey.call([])
 
       assert conn.status == 200
     end
   end
 
-  describe "reading config from System environment" do
-    defmodule SimplePlugWithSystem do
+  describe "configured to get username and password from System" do
+    defmodule PlugWithSystem do
       use DemoPlug, use_config: {:basic_auth, :my_auth_with_system}
     end
 
-
     test "username and password" do
       System.put_env("USERNAME", "bananauser")
-      System.put_env("PASSWORD", "bananapassword")
+      System.put_env("PASSWORD", "banana:password")
 
-      header_content = "Basic " <> Base.encode64("bananauser:bananapassword")
+      header_content = "Basic " <> Base.encode64("bananauser:banana:password")
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
-      |> SimplePlugWithSystem.call([])
+      |> PlugWithSystem.call([])
 
       assert conn.status == 200
     end
@@ -185,7 +158,7 @@ defmodule BasicAuthTest do
     test "realm" do
       System.put_env("REALM", "Banana")
       conn = conn(:get, "/")
-      |> SimplePlugWithSystem.call([])
+      |> PlugWithSystem.call([])
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Banana\""]
     end
   end
