@@ -49,14 +49,13 @@ defmodule BasicAuth do
   the conn with variables or session for your controller.
   """
 
-  defstruct username: nil, password: nil, realm: nil
+  defmodule Configuration do
+    defstruct  config_options: nil
+  end
 
-  def init([use_config: {app, config_key} = config_options]) do
-    configuration = Application.fetch_env!(app, config_key)
 
-    %__MODULE__{username: config_option(config_options, configuration, :username),
-                password: config_option(config_options, configuration, :password),
-                realm:    config_option(config_options, configuration, :realm)}
+  def init([use_config: config_options]) do
+    %Configuration{config_options: config_options,}
   end
 
   def init([callback: callback, realm: realm]) do
@@ -86,8 +85,8 @@ defmodule BasicAuth do
     respond(conn, header_content, options)
   end
 
-  defp respond(conn, ["Basic " <> encoded_string], options) do
-    with {:ok, string} <- Base.decode64(encoded_string),
+  defp respond(conn, ["Basic " <> key], options) do
+    with {:ok, string} <- Base.decode64(key),
          [username, password] <- String.split(string, ":", parts: 2)
     do
       respond(conn, username, password, options)
@@ -110,24 +109,24 @@ defmodule BasicAuth do
     end
   end
 
-  defp respond(conn, username, password, %{username: config_usr, password: config_pwd, realm: realm}) do
-    if {username, password} == {to_value(config_usr), to_value(config_pwd)} do
+  defp respond(conn, username, password, %Configuration{config_options: config_options}) do
+    if {username, password} == {username(config_options), password(config_options)} do
       conn
     else
-      send_unauthorized_response(conn, %{realm: realm})
+      send_unauthorized_response(conn, %{realm: realm(config_options)})
     end
   end
 
-  defp config_option({app, config_key}, configuration, key) do
-    Keyword.get(configuration, key) ||
-      raise ArgumentError, """
-      BasicAuth configuration value missing, in #{inspect app}, #{inspect config_key}, for option #{inspect key}.
-      """
+  defp send_unauthorized_response(conn, %Configuration{config_options: config_options}) do
+    conn
+    |> Plug.Conn.put_resp_header("www-authenticate", "Basic realm=\"#{realm(config_options)}\"")
+    |> Plug.Conn.send_resp(401, "401 Unauthorized")
+    |> Plug.Conn.halt
   end
 
   defp send_unauthorized_response(conn, %{realm: realm}) do
     conn
-    |> Plug.Conn.put_resp_header("www-authenticate", "Basic realm=\"#{to_value(realm)}\"")
+    |> Plug.Conn.put_resp_header("www-authenticate", "Basic realm=\"#{realm}\"")
     |> Plug.Conn.send_resp(401, "401 Unauthorized")
     |> Plug.Conn.halt
   end
@@ -140,4 +139,25 @@ defmodule BasicAuth do
 
   defp to_value({:system, env_var}), do: System.get_env(env_var)
   defp to_value(value), do: value
+
+  defp username({app, key}) do
+    app
+    |> Application.fetch_env!(key)
+    |> Keyword.get(:username)
+    |> to_value()
+  end
+
+  defp password({app, key}) do
+    app
+    |> Application.fetch_env!(key)
+    |> Keyword.get(:password)
+    |> to_value()
+  end
+
+  defp realm({app, key}) do
+    app
+    |> Application.fetch_env!(key)
+    |> Keyword.get(:realm)
+    |> to_value()
+  end
 end
