@@ -6,6 +6,11 @@ defmodule BasicAuthTest do
     use DemoPlug, use_config: {:basic_auth, :my_auth}
   end
 
+  setup do
+    on_exit(fn -> Application.delete_env(:basic_auth, :my_auth) end)
+    :ok
+  end
+
   describe "custom function" do
     defmodule User do
       def find_by_username_and_password(conn, "robert", "secret:value"), do: conn
@@ -138,9 +143,6 @@ defmodule BasicAuthTest do
   end
 
   describe "using configured key instead of username and password" do
-    defmodule PlugWithKey do
-      use DemoPlug, use_config: {:basic_auth, :my_auth_with_key}
-    end
 
     setup do
       Application.put_env(:basic_auth, :my_auth, key: "my:secure:key")
@@ -157,8 +159,14 @@ defmodule BasicAuthTest do
   end
 
   describe "configured to get username and password from System" do
-    defmodule PlugWithSystem do
-      use DemoPlug, use_config: {:basic_auth, :my_auth_with_system}
+
+    setup do
+      Application.put_env(:basic_auth, :my_auth, [
+            username: {:system, "USERNAME"},
+            password: {:system, "PASSWORD"},
+            realm: {:system, "REALM"},
+          ])
+      :ok
     end
 
     test "username and password" do
@@ -168,7 +176,7 @@ defmodule BasicAuthTest do
       header_content = "Basic " <> Base.encode64("bananauser:banana:password")
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
-      |> PlugWithSystem.call([])
+      |> SimplePlug.call([])
 
       assert conn.status == 200
     end
@@ -176,7 +184,7 @@ defmodule BasicAuthTest do
     test "realm" do
       System.put_env("REALM", "Banana")
       conn = conn(:get, "/")
-      |> PlugWithSystem.call([])
+      |> SimplePlug.call([])
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Banana\""]
     end
   end
