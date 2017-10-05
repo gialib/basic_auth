@@ -151,32 +151,24 @@ defmodule BasicAuth do
   defp to_value({:system, env_var}), do: System.get_env(env_var)
   defp to_value(value), do: value
 
-  defp authentication_key(config_options = {app, key}) do
-    case Application.fetch_env!(app, key)[:key] do
+  defp authentication_key(config_options) do
+    case credential_part(config_options, :key, nil) do
       nil -> username(config_options) <> ":" <> password(config_options)
       authentication_key -> authentication_key
     end
   end
 
-  defp username({app, key}) do
-    app
-    |> Application.fetch_env!(key)
-    |> Keyword.get(:username)
-    |> to_value()
-  end
+  defp username(config_options), do: credential_part(config_options, :username)
 
-  defp password({app, key}) do
-    app
-    |> Application.fetch_env!(key)
-    |> Keyword.get(:password)
-    |> to_value()
-  end
+  defp password(config_options), do: credential_part(config_options, :password)
 
-  defp realm({app, key}) do
-    result = app
+  defp realm(config_options), do: credential_part(config_options, :realm, @default_realm)
+
+  defp credential_part({app, key}, part, default \\ nil) do
+    value = app
     |> Application.fetch_env!(key)
-    |> Keyword.get(:realm)
+    |> Keyword.get(part)
     |> to_value()
-    result || @default_realm
+    value || default
   end
 end
