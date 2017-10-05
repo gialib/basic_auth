@@ -49,6 +49,8 @@ defmodule BasicAuth do
   the conn with variables or session for your controller.
   """
 
+  @default_realm "Basic Authentication"
+
   defmodule Configuration do
     @moduledoc false
     defstruct  config_options: nil
@@ -56,7 +58,7 @@ defmodule BasicAuth do
 
   defmodule Callback do
     @moduledoc false
-    defstruct callback: nil, realm: "Basic Authentication"
+    defstruct callback: nil, realm: nil
   end
 
 
@@ -69,8 +71,8 @@ defmodule BasicAuth do
   end
 
   def init([callback: callback]) do
-    %Callback{callback: callback, realm: "Basic Authentication"}
-  end
+    %Callback{callback: callback, realm: @default_realm}
+    end
 
   def init(_) do
     raise ArgumentError, """
@@ -171,9 +173,10 @@ defmodule BasicAuth do
   end
 
   defp realm({app, key}) do
-    app
+    result = app
     |> Application.fetch_env!(key)
     |> Keyword.get(:realm)
     |> to_value()
+    result || @default_realm
   end
 end

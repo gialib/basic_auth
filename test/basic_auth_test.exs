@@ -2,6 +2,10 @@ defmodule BasicAuthTest do
   use ExUnit.Case, async: true
   use Plug.Test
 
+  defmodule SimplePlug do
+    use DemoPlug, use_config: {:basic_auth, :my_auth}
+  end
+
   describe "custom function" do
     defmodule User do
       def find_by_username_and_password(conn, "robert", "secret:value"), do: conn
@@ -60,8 +64,10 @@ defmodule BasicAuthTest do
   end
 
   describe "with username and password from configuration" do
-    defmodule SimplePlug do
-      use DemoPlug, use_config: {:basic_auth, :my_auth}
+
+    setup do
+      Application.put_env(:basic_auth, :my_auth, username: "admin",
+        password: "simple:password", realm: "Admin Area")
     end
 
     test "no credentials returns a 401" do
@@ -70,6 +76,14 @@ defmodule BasicAuthTest do
 
       assert conn.status == 401
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Admin Area\""]
+    end
+
+    test "default realm" do
+      Application.put_env(:basic_auth, :my_auth, username: "admin", password: "simple:password")
+      conn = conn(:get, "/")
+      |> SimplePlug.call([])
+
+      assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Basic Authentication\""]
     end
 
     test "invalid credentials returns a 401" do
@@ -83,7 +97,7 @@ defmodule BasicAuthTest do
     end
 
     test "incorrect header returns a 401" do
-      header_content = "Banana " <> Base.encode64("admin:simple_password")
+      header_content = "Banana " <> Base.encode64("admin:simple:password")
 
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
@@ -128,11 +142,15 @@ defmodule BasicAuthTest do
       use DemoPlug, use_config: {:basic_auth, :my_auth_with_key}
     end
 
+    setup do
+      Application.put_env(:basic_auth, :my_auth, key: "my:secure:key")
+    end
+
     test "is successful" do
       header_content = "Basic " <> Base.encode64("my:secure:key")
       conn = conn(:get, "/")
       |> put_req_header("authorization", header_content)
-      |> PlugWithKey.call([])
+      |> SimplePlug.call([])
 
       assert conn.status == 200
     end
