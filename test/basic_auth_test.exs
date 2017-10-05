@@ -123,7 +123,7 @@ defmodule BasicAuthTest do
     end
   end
 
-  describe "using key instead of username and password" do
+  describe "using configured key instead of username and password" do
     defmodule PlugWithKey do
       use DemoPlug, use_config: {:basic_auth, :my_auth_with_key}
     end

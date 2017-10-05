@@ -93,7 +93,7 @@ defmodule BasicAuth do
 
   defp respond(conn, ["Basic " <> encoded], options) do
     case Base.decode64(encoded) do
-      {:ok, key} -> respondx(conn, key, options)
+      {:ok, key} -> check_key(conn, key, options)
       _ ->
         send_unauthorized_response(conn, options)
     end
@@ -103,7 +103,7 @@ defmodule BasicAuth do
     send_unauthorized_response(conn, options)
   end
 
-  defp respondx(conn, key, %Callback{callback: callback}) do
+  defp check_key(conn, key, %Callback{callback: callback}) do
     case String.split(key, ":", parts: 2) do
       [username, password] ->
         conn = callback.(conn, username, password)
@@ -117,7 +117,7 @@ defmodule BasicAuth do
     end
   end
 
-  defp respondx(conn, provided_key, %Configuration{config_options: config_options}) do
+  defp check_key(conn, provided_key, %Configuration{config_options: config_options}) do
     if provided_key  == authentication_key(config_options) do
       conn
     else
