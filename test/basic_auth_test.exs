@@ -188,4 +188,29 @@ defmodule BasicAuthTest do
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Banana\""]
     end
   end
+
+  describe "missing configuration" do
+
+    setup do
+      header_content = "Basic " <> Base.encode64("doesnotreallymatter")
+      conn = :get
+      |> conn("/")
+      |> put_req_header("authorization", header_content)
+      {:ok, conn: conn}
+    end
+
+    test "no configuration at all", %{conn: conn} do
+      assert_raise(ArgumentError, fn -> SimplePlug.call(conn, []) end)
+    end
+
+    test "no key, no username", %{conn: conn} do
+      Application.put_env(:basic_auth, :my_auth, password: "simple:password")
+      assert_raise(ArgumentError, ~r/Missing/, fn -> SimplePlug.call(conn, []) end)
+    end
+
+    test "no key, no password", %{conn: conn} do
+      Application.put_env(:basic_auth, :my_auth, username: "admin")
+      assert_raise(ArgumentError, ~r/Missing/, fn -> SimplePlug.call(conn, []) end)
+    end
+  end
 end

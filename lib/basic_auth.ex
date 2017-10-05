@@ -164,11 +164,18 @@ defmodule BasicAuth do
 
   defp realm(config_options), do: credential_part(config_options, :realm, @default_realm)
 
-  defp credential_part({app, key}, part, default \\ nil) do
+  defp credential_part({app, key}, part, default) do
     value = app
     |> Application.fetch_env!(key)
     |> Keyword.get(part)
     |> to_value()
     value || default
+  end
+
+  defp credential_part(config_options, part) do
+    case credential_part(config_options, part, nil) do
+      nil -> raise(ArgumentError, "Missing #{inspect(part)} or :key from #{inspect(config_options)}")
+      value -> value
+    end
   end
 end
