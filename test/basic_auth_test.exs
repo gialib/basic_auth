@@ -7,14 +7,30 @@ defmodule BasicAuthTest do
   end
 
   setup do
-    on_exit(fn -> Application.delete_env(:basic_auth, :my_auth) end)
+    Application.delete_env(:basic_auth, :my_auth)
     :ok
+  end
+
+  defp call_with_credentials(plug, authentication) do
+    header_content = "Basic " <> Base.encode64(authentication)
+    :get
+    |> conn("/")
+    |> put_req_header("authorization", header_content)
+    |> plug.call([])
+  end
+
+  defp call_without_credentials(plug) do
+    :get
+    |> conn("/")
+    |> plug.call([])
   end
 
   describe "custom function" do
     defmodule User do
       def find_by_username_and_password(conn, "robert", "secret:value"), do: conn
       def find_by_username_and_password(conn, _, _), do: Plug.Conn.halt(conn)
+      def find_by_key(conn, "correctkey"), do: conn
+      def find_by_key(conn, _), do: Plug.Conn.halt(conn)
     end
 
     defmodule PlugWithCallback do
@@ -25,45 +41,38 @@ defmodule BasicAuthTest do
       use DemoPlug, callback: &User.find_by_username_and_password/3, realm: "Bob's Kingdom"
     end
 
+    defmodule PlugWithKeyCallback do
+      use DemoPlug, callback: &User.find_by_key/2
+    end
+
+    defmodule PlugWithKeyCallbackAndRealm do
+      use DemoPlug, callback: &User.find_by_key/2
+    end
+
     test "no credentials provided" do
-      conn = conn(:get, "/")
-      |> PlugWithCallback.call([])
+      conn = call_without_credentials(PlugWithCallback)
       assert conn.status == 401
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Basic Authentication\""]
     end
 
     test "no credentials provided with custom realm" do
-      conn = conn(:get, "/")
-      |> PlugWithCallbackAndRealm.call([])
+      conn = call_without_credentials(PlugWithCallbackAndRealm)
       assert conn.status == 401
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Bob's Kingdom\""]
     end
 
     test "wrong credentials provided" do
-      header_content = "Basic " <> Base.encode64("bad:credentials")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> PlugWithCallback.call([])
+      conn = call_with_credentials(PlugWithCallback, "wrong:password")
       assert conn.status == 401
     end
 
     test "right credentials provided" do
-      header_content = "Basic " <> Base.encode64("robert:secret:value")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> PlugWithCallback.call([])
+      conn = call_with_credentials(PlugWithCallback, "robert:secret:value")
       assert conn.status == 200
     end
 
     test "incorrect basic auth formatting returns a 401" do
-      header_content = "Basic " <> Base.encode64("bogus")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> PlugWithCallback.call([])
-
+      conn = call_with_credentials(PlugWithCallback, "robert")
       assert conn.status == 401
     end
   end
@@ -76,28 +85,19 @@ defmodule BasicAuthTest do
     end
 
     test "no credentials returns a 401" do
-      conn = conn(:get, "/")
-      |> SimplePlug.call([])
-
+      conn = call_without_credentials(SimplePlug)
       assert conn.status == 401
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Admin Area\""]
     end
 
     test "default realm" do
       Application.put_env(:basic_auth, :my_auth, username: "admin", password: "simple:password")
-      conn = conn(:get, "/")
-      |> SimplePlug.call([])
-
+      conn = call_without_credentials(SimplePlug)
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Basic Authentication\""]
     end
 
     test "invalid credentials returns a 401" do
-      header_content = "Basic " <> Base.encode64("bad:credentials")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> SimplePlug.call([])
-
+      conn = call_with_credentials(SimplePlug, "wrong:password")
       assert conn.status == 401
     end
 
@@ -112,12 +112,7 @@ defmodule BasicAuthTest do
     end
 
     test "incorrect basic auth formatting returns a 401" do
-      header_content = "Basic " <> Base.encode64("bogus")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> SimplePlug.call([])
-
+      conn = call_with_credentials(SimplePlug, "bob")
       assert conn.status == 401
     end
 
@@ -132,28 +127,18 @@ defmodule BasicAuthTest do
     end
 
     test "valid credentials returns a 200" do
-      header_content = "Basic " <> Base.encode64("admin:simple:password")
-
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> SimplePlug.call([])
-
+      conn = call_with_credentials(SimplePlug, "admin:simple:password")
       assert conn.status == 200
     end
   end
 
   describe "using configured key instead of username and password" do
-
     setup do
-      Application.put_env(:basic_auth, :my_auth, key: "my:secure:key")
+      Application.put_env(:basic_auth, :my_auth, key: "mysecurekey")
     end
 
     test "is successful" do
-      header_content = "Basic " <> Base.encode64("my:secure:key")
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> SimplePlug.call([])
-
+      conn = call_with_credentials(SimplePlug, "mysecurekey")
       assert conn.status == 200
     end
   end
@@ -173,18 +158,13 @@ defmodule BasicAuthTest do
       System.put_env("USERNAME", "bananauser")
       System.put_env("PASSWORD", "banana:password")
 
-      header_content = "Basic " <> Base.encode64("bananauser:banana:password")
-      conn = conn(:get, "/")
-      |> put_req_header("authorization", header_content)
-      |> SimplePlug.call([])
-
+      conn = call_with_credentials(SimplePlug, "bananauser:banana:password")
       assert conn.status == 200
     end
 
     test "realm" do
       System.put_env("REALM", "Banana")
-      conn = conn(:get, "/")
-      |> SimplePlug.call([])
+      conn = call_without_credentials(SimplePlug)
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Banana\""]
     end
   end
