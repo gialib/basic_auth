@@ -61,18 +61,25 @@ defmodule BasicAuth do
     defstruct callback: nil, realm: nil
   end
 
+  defmodule KeyCallback do
+    @moduledoc false
+    defstruct callback: nil, realm: nil
+  end
+
 
   def init([use_config: config_options]) do
     %Configuration{config_options: config_options}
   end
 
-  def init([callback: callback, realm: realm]) do
-    %Callback{callback: callback, realm: realm}
-  end
-
-  def init([callback: callback]) do
-    %Callback{callback: callback, realm: @default_realm}
+  def init(options) when is_list(options) do
+    callback = Keyword.fetch!(options, :callback)
+    realm = Keyword.get(options, :realm, @default_realm)
+    case :erlang.fun_info(callback)[:arity] do
+      2 -> %KeyCallback{callback: callback, realm: realm}
+      3 -> %Callback{callback: callback, realm: realm}
+      _ -> raise(ArgumentError, "Callback must be of arity 2 (for connection and key) or 3 (for connection, username, and password).")
     end
+  end
 
   def init(_) do
     raise ArgumentError, """
@@ -84,7 +91,9 @@ defmodule BasicAuth do
     Using custom authentication function:
     plug BasicAuth, callback: &MyCustom.function/3
 
-    Where :callback takes a conn, username and password and returns a conn.
+    Where :callback takes either
+    * a conn, username and password and returns a conn.
+    * a conn and a key and returns a conn
     """
   end
 
@@ -105,25 +114,34 @@ defmodule BasicAuth do
     send_unauthorized_response(conn, options)
   end
 
-  defp check_key(conn, key, %Callback{callback: callback}) do
+  defp check_key(conn, key, options = %Callback{callback: callback}) do
     case String.split(key, ":", parts: 2) do
       [username, password] ->
-        conn = callback.(conn, username, password)
-        if conn.halted do
-          send_unauthorized_response(conn, %{})
-        else
-          conn
-        end
+        conn
+        |> callback.(username, password)
+        |> check_callback_response(options)
       _ ->
-        send_unauthorized_response(conn, %{})
+        send_unauthorized_response(conn, options)
     end
   end
-
+  defp check_key(conn, key, options = %KeyCallback{callback: callback}) do
+    conn
+    |> callback.(key)
+    |> check_callback_response(options)
+  end
   defp check_key(conn, provided_key, %Configuration{config_options: config_options}) do
     if provided_key  == authentication_key(config_options) do
       conn
     else
       send_unauthorized_response(conn, %{realm: realm(config_options)})
+    end
+  end
+
+  defp check_callback_response(conn, config_options) do
+    if conn.halted do
+      send_unauthorized_response(conn, config_options)
+    else
+      conn
     end
   end
 

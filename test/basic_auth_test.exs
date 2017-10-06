@@ -46,7 +46,7 @@ defmodule BasicAuthTest do
     end
 
     defmodule PlugWithKeyCallbackAndRealm do
-      use DemoPlug, callback: &User.find_by_key/2
+      use DemoPlug, callback: &User.find_by_key/2, realm: "Bob's Kingdom"
     end
 
     test "no credentials provided" do
@@ -55,9 +55,8 @@ defmodule BasicAuthTest do
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Basic Authentication\""]
     end
 
-    test "no credentials provided with custom realm" do
-      conn = call_without_credentials(PlugWithCallbackAndRealm)
-      assert conn.status == 401
+    test "with custom realm" do
+      conn = call_with_credentials(PlugWithCallbackAndRealm, "wrong:wrong")
       assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Bob's Kingdom\""]
     end
 
@@ -74,6 +73,21 @@ defmodule BasicAuthTest do
     test "incorrect basic auth formatting returns a 401" do
       conn = call_with_credentials(PlugWithCallback, "robert")
       assert conn.status == 401
+    end
+
+    test "with valid key callback" do
+      conn = call_with_credentials(PlugWithKeyCallback, "correctkey")
+      assert conn.status == 200
+    end
+
+    test "with invalid key callback" do
+      conn = call_with_credentials(PlugWithKeyCallback, "wrongkey")
+      assert conn.status == 401
+    end
+
+    test "key callback custom realm" do
+      conn = call_with_credentials(PlugWithKeyCallbackAndRealm, "wrongkey")
+      assert Plug.Conn.get_resp_header(conn, "www-authenticate") == [ "Basic realm=\"Bob's Kingdom\""]
     end
   end
 
