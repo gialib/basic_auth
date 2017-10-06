@@ -1,5 +1,5 @@
 defmodule BasicAuthTest do
-  use ExUnit.Case, async: true
+ use ExUnit.Case, async: true
   use Plug.Test
 
   defmodule SimplePlug do
@@ -148,7 +148,7 @@ defmodule BasicAuthTest do
 
   describe "using configured key instead of username and password" do
     setup do
-      Application.put_env(:basic_auth, :my_auth, key: "mysecurekey")
+      Application.put_env(:basic_auth, :my_auth, token: "mysecurekey")
     end
 
     test "is successful" do

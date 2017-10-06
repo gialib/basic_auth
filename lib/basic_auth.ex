@@ -1,52 +1,7 @@
 defmodule BasicAuth do
 
   @moduledoc """
-  Plug for adding basic authentication. Usage:
-
-  ```elixir
-  plug BasicAuth, use_config: {:your_app, :your_config}
-  ```
-
-  Where :your_app and :your_config should refer to values in your application config.
-
-  In your configuration you can set values directly, eg
-
-  ```elixir
-
-  config :your_app, your_config: [
-    username: "admin",
-    password: "simple_password",
-    realm: "Admin Area"
-  ]
-  ```
-
-  or choose to get one (or all) from environment variables, eg
-
-  ```elixir
-  config :basic_auth, my_auth_with_system: [
-    username: {:system, "BASIC_AUTH_USERNAME"},
-    password: {:system, "BASIC_AUTH_PASSWORD"},
-    realm:    {:system, "BASIC_AUTH_REALM"}
-  ]
-  ```
-
-  Alternatively you can provide a custom function to the plug to authenticate the user any way
-  you want, such as finding the user from a database.
-
-  ```elixir
-  plug BasicAuth, callback: &User.find_by_username_and_password/3
-  ```
-
-  (or optionally provide a realm)
-
-  ```elixir
-  plug BasicAuth, callback: &User.find_by_username_and_password/3, realm: "Area 51"
-  ```
-
-  Where :callback is your custom authentication function that takes a conn, username and a
-  password and returns a conn.  Your function must return `Plug.Conn.halt(conn)` if authentication
-  fails, otherwise you can use `Plug.Conn.assign(conn, :current_user, ...)` to enhance
-  the conn with variables or session for your controller.
+  Plug for adding basic authentication.
   """
 
   @default_realm "Basic Authentication"
@@ -61,7 +16,7 @@ defmodule BasicAuth do
     defstruct callback: nil, realm: nil
   end
 
-  defmodule KeyCallback do
+  defmodule TokenCallback do
     @moduledoc false
     defstruct callback: nil, realm: nil
   end
@@ -75,7 +30,7 @@ defmodule BasicAuth do
     callback = Keyword.fetch!(options, :callback)
     realm = Keyword.get(options, :realm, @default_realm)
     case :erlang.fun_info(callback)[:arity] do
-      2 -> %KeyCallback{callback: callback, realm: realm}
+      2 -> %TokenCallback{callback: callback, realm: realm}
       3 -> %Callback{callback: callback, realm: realm}
       _ -> raise(ArgumentError, "Callback must be of arity 2 (for connection and key) or 3 (for connection, username, and password).")
     end
@@ -104,7 +59,7 @@ defmodule BasicAuth do
 
   defp respond(conn, ["Basic " <> encoded], options) do
     case Base.decode64(encoded) do
-      {:ok, key} -> check_key(conn, key, options)
+      {:ok, token} -> check_token(conn, token, options)
       _ ->
         send_unauthorized_response(conn, options)
     end
@@ -114,8 +69,8 @@ defmodule BasicAuth do
     send_unauthorized_response(conn, options)
   end
 
-  defp check_key(conn, key, options = %Callback{callback: callback}) do
-    case String.split(key, ":", parts: 2) do
+  defp check_token(conn, token, options = %Callback{callback: callback}) do
+    case String.split(token, ":", parts: 2) do
       [username, password] ->
         conn
         |> callback.(username, password)
@@ -124,13 +79,13 @@ defmodule BasicAuth do
         send_unauthorized_response(conn, options)
     end
   end
-  defp check_key(conn, key, options = %KeyCallback{callback: callback}) do
+  defp check_token(conn, token, options = %TokenCallback{callback: callback}) do
     conn
-    |> callback.(key)
+    |> callback.(token)
     |> check_callback_response(options)
   end
-  defp check_key(conn, provided_key, %Configuration{config_options: config_options}) do
-    if provided_key  == authentication_key(config_options) do
+  defp check_token(conn, token, %Configuration{config_options: config_options}) do
+    if token  == configured_token(config_options) do
       conn
     else
       send_unauthorized_response(conn, %{realm: realm(config_options)})
@@ -169,10 +124,10 @@ defmodule BasicAuth do
   defp to_value({:system, env_var}), do: System.get_env(env_var)
   defp to_value(value), do: value
 
-  defp authentication_key(config_options) do
-    case credential_part(config_options, :key, nil) do
+  defp configured_token(config_options) do
+    case credential_part(config_options, :token, nil) do
       nil -> username(config_options) <> ":" <> password(config_options)
-      authentication_key -> authentication_key
+      token -> token
     end
   end
 
@@ -192,7 +147,7 @@ defmodule BasicAuth do
 
   defp credential_part(config_options, part) do
     case credential_part(config_options, part, nil) do
-      nil -> raise(ArgumentError, "Missing #{inspect(part)} or :key from #{inspect(config_options)}")
+      nil -> raise(ArgumentError, "Missing #{inspect(part)} or :token from #{inspect(config_options)}")
       value -> value
     end
   end
