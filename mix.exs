@@ -25,7 +25,7 @@ defmodule BasicAuth.Mixfile do
 
   defp deps do
     [
-      {:plug, github: "gialib/plug", override: true},
+      {:plug, "~> 1.5.1"},
       {:ex_doc, ">= 0.0.0", only: :dev},
       {:cowboy, "~> 1.0 or ~> 2.3", override: true},
       {:credo, ">= 0.0.0", only: [:dev, :test]}
